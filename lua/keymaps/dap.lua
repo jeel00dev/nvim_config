@@ -1,0 +1,25 @@
+-- keymaps/dap.lua — Debug keybindings (<leader>d)
+local map = require("utils.functions").map
+
+map("n", "<leader>db", function() require("dap").toggle_breakpoint() end, "Toggle breakpoint")
+map("n", "<leader>dB", function()
+  require("dap").set_breakpoint(vim.fn.input("Breakpoint condition: "))
+end, "Conditional breakpoint")
+map("n", "<leader>dc", function() require("dap").continue() end, "Continue")
+map("n", "<leader>di", function() require("dap").step_into() end, "Step into")
+map("n", "<leader>do", function() require("dap").step_over() end, "Step over")
+map("n", "<leader>dO", function() require("dap").step_out() end, "Step out")
+map("n", "<leader>dr", function() require("dap").repl.toggle() end, "Toggle REPL")
+map("n", "<leader>dl", function() require("dap").run_last() end, "Run last")
+map("n", "<leader>dt", function() require("dapui").toggle() end, "Toggle DAP UI")
+map("n", "<leader>de", function() require("dapui").eval() end, "Evaluate expression")
+map("v", "<leader>de", function() require("dapui").eval() end, "Evaluate selection")
+map("n", "<leader>dx", function() require("dap").terminate() end, "Terminate session")
+
+-- Backup debugging function keys
+map("n", "<F6>", function() require("dap").continue() end, "Dap: Continue")
+map("n", "<F7>", function() require("dap").terminate() end, "Dap: Terminate")
+map("n", "<F8>", function() require("dap").toggle_breakpoint() end, "Dap: Toggle breakpoint")
+map("n", "<F9>", function() require("dap").step_into() end, "Dap: Step into")
+map("n", "<F10>", function() require("dap").step_out() end, "Dap: Step out")
+map("n", "<F11>", function() require("dap").step_over() end, "Dap: Step over")

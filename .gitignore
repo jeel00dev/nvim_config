@@ -1,0 +1,18 @@
+# lazy.nvim lock file is committed (reproducible installs)
+# lazy-lock.json
+
+# Plugin data
+plugin/
+
+# Swap, backup, undo
+*.swp
+*.swo
+*~
+.netrwhist
+
+# OS
+.DS_Store
+Thumbs.db
+
+# User overrides (optional — uncomment to gitignore)
+# lua/config/user.lua

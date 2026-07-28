@@ -1,0 +1,109 @@
+#!/bin/bash
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  nvim-ai — Launch Neovim with local AI (llama.cpp + Qwen 2.5)      ║
+# ║                                                                      ║
+# ║  Starts llama-server in the background, opens Neovim with AI mode,  ║
+# ║  and cleans up the server when Neovim exits.                         ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+# ── Configuration ──────────────────────────────────────────────────────
+LLAMA_SERVER="${LLAMA_SERVER:-$HOME/Projects/llama.cpp/build/bin/llama-server}"
+MODEL_PATH="${LLAMA_MODEL:-$HOME/Projects/llama.cpp/models/qwen2.5-coder-14b-instruct-q3_k_m.gguf}"
+PORT="${LLAMA_PORT:-8080}"
+CONTEXT="${LLAMA_CTX:-32768}"
+THREADS="${LLAMA_THREADS:-6}"
+LOG_FILE="/tmp/llama-server.log"
+
+# ── Colors ─────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# ── Preflight checks ──────────────────────────────────────────────────
+if [[ ! -x "$LLAMA_SERVER" ]]; then
+  echo -e "${RED}✗ llama-server not found at:${NC} $LLAMA_SERVER"
+  echo -e "${YELLOW}  Build llama.cpp first:${NC}"
+  echo "    git clone https://github.com/ggml-org/llama.cpp.git ~/projects/llama.cpp"
+  echo "    cd ~/projects/llama.cpp && cmake -B build && cmake --build build --config Release -j\$(nproc)"
+  echo ""
+  echo -e "${YELLOW}  Or set LLAMA_SERVER to your llama-server path:${NC}"
+  echo "    export LLAMA_SERVER=/path/to/llama-server"
+  exit 1
+fi
+
+if [[ ! -f "$MODEL_PATH" ]]; then
+  echo -e "${RED}✗ Model not found at:${NC} $MODEL_PATH"
+  echo -e "${YELLOW}  Download a model first:${NC}"
+  echo "    pip install huggingface-hub"
+  echo "    huggingface-cli download Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \\"
+  echo "      qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --local-dir ~/models"
+  echo ""
+  echo -e "${YELLOW}  Or set LLAMA_MODEL to your model path:${NC}"
+  echo "    export LLAMA_MODEL=/path/to/model.gguf"
+  exit 1
+fi
+
+# ── Check if server is already running and model is loaded ─────────────
+SERVER_PID=""
+ALREADY_RUNNING=false
+
+# curl -sf: -s = silent, -f = fail on HTTP errors (like 503 "Loading model")
+if curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then
+  echo -e "${BLUE}● llama-server already running on port $PORT${NC}"
+  ALREADY_RUNNING=true
+else
+  # ── Start llama-server ─────────────────────────────────────────────
+  echo -e "${BLUE}● Starting llama-server...${NC}"
+  echo -e "${YELLOW}  Model: $(basename "$MODEL_PATH")${NC}"
+  "$LLAMA_SERVER" \
+    -m "$MODEL_PATH" \
+    --port "$PORT" \
+    -c "$CONTEXT" \
+    -t "$THREADS" \
+    >"$LOG_FILE" 2>&1 &
+  SERVER_PID=$!
+
+  # Wait for server + model to be fully ready (max 120 seconds)
+  # The 6.7B model takes 30-60s to load on CPU
+  echo -ne "${YELLOW}  Waiting for model to load"
+  for i in $(seq 1 240); do
+    # -sf ensures we only succeed when server returns HTTP 200
+    # (not 503 "Loading model")
+    if curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then
+      echo -e " ${GREEN}ready!${NC}"
+      break
+    fi
+    # Check if process died
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      echo -e " ${RED}failed!${NC}"
+      echo -e "${RED}  Server crashed. Check logs: $LOG_FILE${NC}"
+      exit 1
+    fi
+    echo -n "."
+    sleep 0.5
+  done
+
+  # Final check
+  if ! curl -sf "http://localhost:$PORT/health" >/dev/null 2>&1; then
+    echo -e " ${RED}timeout!${NC}"
+    echo -e "${RED}  Model didn't load in time. Check logs: $LOG_FILE${NC}"
+    kill "$SERVER_PID" 2>/dev/null
+    exit 1
+  fi
+
+  echo -e "${GREEN}✓ llama-server running${NC} (PID: $SERVER_PID, port: $PORT)"
+fi
+
+# ── Launch Neovim with AI mode ─────────────────────────────────────────
+echo -e "${GREEN}✓ Opening Neovim with AI mode${NC}"
+NVIM_AI=1 "$HOME/Applications/nvim/nvim_0.11.7.appimage" "$@"
+
+# ── Cleanup ────────────────────────────────────────────────────────────
+if [[ "$ALREADY_RUNNING" == false ]] && [[ -n "$SERVER_PID" ]]; then
+  echo -e "${BLUE}● Stopping llama-server (PID: $SERVER_PID)...${NC}"
+  kill "$SERVER_PID" 2>/dev/null
+  wait "$SERVER_PID" 2>/dev/null
+  echo -e "${GREEN}✓ Server stopped${NC}"
+fi
